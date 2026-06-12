@@ -61,12 +61,15 @@ export default function WelcomeTriage() {
   }, [onboarding, navigate]);
 
   const handleComplete = async () => {
+    if (saving) return;
     setSaving(true);
-    await saveOnboarding({
+    const result = await saveOnboarding({
       user_type: userType ?? undefined,
       primary_goal: goal,
       onboarding_complete: true,
     });
+    console.log("saveOnboarding result:", result);
+    // Navigate regardless — the local state update is the source of truth
     navigate("/dashboard", { replace: true });
   };
 

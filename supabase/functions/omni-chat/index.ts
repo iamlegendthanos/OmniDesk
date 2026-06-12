@@ -13,7 +13,7 @@ Your core operating rules:
    - Finder: passions, skills, budget, product vs service preference
    - Grower: current business, main bottleneck, tools used, customer base
    - Scaler: tech stack, team size, revenue stage, 90-day target
-4. BLOOM TRIGGER: After 3-5 exchanges, when you have enough context, synthesize insights and announce that you're seeding their Roadmap and Workflow Flowerbed. Include a summary of what you've set up.
+4. BLOOM TRIGGER: After 3-5 exchanges, when you have enough context to act, ALWAYS include the phrase "seeding your roadmap and workflow flowerbed" in your response (lowercase exactly as written). Then synthesize their insights into a summary covering: their business concept, the top automation priority, and first 3 action steps. This signals the app to visually bloom their workspace.
 
 Formatting rules:
 - Use **bold** for key terms and action items
@@ -44,6 +44,12 @@ serve(async (req) => {
       ? `${SYSTEM_PROMPT}\n\nThe user's name is ${userName}. Address them by name occasionally but not in every message.`
       : SYSTEM_PROMPT;
 
+    // Count user messages to determine if bloom should be triggered
+    const userMsgCount = (messages as {role: string}[]).filter((m) => m.role === 'user').length;
+    const extraInstruction = userMsgCount >= 4
+      ? '\n\nIMPORTANT: You now have enough context. In THIS response, synthesize everything and include the exact phrase "seeding your roadmap and workflow flowerbed" to trigger the bloom event. Give them a warm summary of what you\'ve learned and what you\'re setting up for them.'
+      : '';
+
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -53,11 +59,11 @@ serve(async (req) => {
       body: JSON.stringify({
         model: 'google/gemini-3-flash-preview',
         messages: [
-          { role: 'system', content: systemContent },
+          { role: 'system', content: systemContent + extraInstruction },
           ...messages,
         ],
         temperature: 0.82,
-        max_tokens: 600,
+        max_tokens: 700,
       }),
     });
 

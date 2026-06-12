@@ -31,15 +31,17 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!loading && onboarding !== null && !onboarding.onboarding_complete) {
+    // Only redirect if we've finished loading AND we have a definitive incomplete state
+    // onboarding_complete must be explicitly false (not null/undefined)
+    if (!loading && onboarding !== null && onboarding.onboarding_complete === false) {
       navigate("/welcome-triage", { replace: true });
     }
   }, [loading, onboarding, navigate]);
 
   if (loading) return <LoadingScreen />;
 
-  // If not complete, redirect is already fired above — render nothing momentarily
-  if (onboarding !== null && !onboarding.onboarding_complete) return null;
+  // Still waiting for DB or mid-redirect — show nothing
+  if (!loading && onboarding !== null && onboarding.onboarding_complete === false) return null;
 
   return <>{children}</>;
 }

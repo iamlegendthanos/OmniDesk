@@ -29,8 +29,63 @@ export default function LoginPage() {
   const handleSendOtp = async () => {
     if (!email.trim()) return toast.error("Please enter your email.");
     setLoading(true);
-    const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
-    if (error) { toast.error(error.message); setLoading(false); return; }
+
+    // First, check if this email already has an account by attempting sign-in with a dummy password
+    // If the error is "Invalid login credentials", the user exists (password just doesn't match)
+    // If the error is "Email not confirmed" or similar, user also exists
+    const { error: probeError } = await supabase.auth.signInWithPassword({
+      email,
+      password: "omni__probe__check__2024",
+    });
+
+    const probeMsg = probeError?.message?.toLowerCase() ?? "";
+    const accountExists =
+      probeMsg.includes("invalid login credentials") ||
+      probeMsg.includes("email not confirmed") ||
+      probeMsg.includes("invalid credentials") ||
+      probeMsg.includes("user already registered") ||
+      probeMsg.includes("already registered");
+
+    if (accountExists) {
+      setLoading(false);
+      toast.error("An account with this email already exists.", {
+        description: "Please sign in with your password instead.",
+        action: {
+          label: "Go to login",
+          onClick: () => setMode("login"),
+        },
+        duration: 6000,
+      });
+      setMode("login");
+      return;
+    }
+
+    // No account found — proceed with OTP signup
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: true },
+    });
+    if (error) {
+      const msg = error.message?.toLowerCase() ?? "";
+      // Catch any server-side duplicate detection
+      if (
+        msg.includes("already registered") ||
+        msg.includes("user already") ||
+        msg.includes("already exists")
+      ) {
+        toast.error("This email already has an account.", {
+          description: "Please sign in with your password instead.",
+          action: { label: "Go to login", onClick: () => setMode("login") },
+          duration: 6000,
+        });
+        setMode("login");
+      } else {
+        toast.error(error.message);
+      }
+      setLoading(false);
+      return;
+    }
+
     toast.success("Verification code sent — check your inbox.");
     setMode("otp");
     setLoading(false);
