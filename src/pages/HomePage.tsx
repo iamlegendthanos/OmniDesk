@@ -3,21 +3,142 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoadmap } from "@/hooks/useRoadmap";
 import { useWorkflowNodes } from "@/hooks/useWorkflowNodes";
+import { useOnboarding } from "@/hooks/useOnboarding";
 import { supabase } from "@/lib/supabase";
 import { FunctionsHttpError } from "@supabase/supabase-js";
 import {
   MessageCircle, Map, Flower2, ArrowRight, TrendingUp,
-  Zap, Lightbulb, Loader2,
+  Lightbulb, Loader2,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 
-/* ─── AI "next action" card ─── */
-function NextActionCard({ user, items, nodes }: {
+/* ─────────────────────────────────────────────────────────────
+   ANIMATED CIRCULAR PROGRESS RING
+───────────────────────────────────────────────────────────── */
+function ProgressRing({
+  roadmapPct,
+  bloomedNodes,
+  chatExchanges,
+}: {
+  roadmapPct: number;
+  bloomedNodes: number;
+  chatExchanges: number;
+}) {
+  // Composite score: roadmap 50% weight, bloom nodes 30%, chat 20%
+  const bloomScore = Math.min(bloomedNodes / 4, 1) * 100;
+  const chatScore = Math.min(chatExchanges / 8, 1) * 100;
+  const composite = Math.round(roadmapPct * 0.5 + bloomScore * 0.3 + chatScore * 0.2);
+
+  const radius = 52;
+  const circumference = 2 * Math.PI * radius; // ~326.7
+  const dashOffset = circumference - (composite / 100) * circumference;
+
+  return (
+    <div className="surface-card p-7 flex flex-col items-center justify-center animate-fade-up stagger-1">
+      <p className="text-xs text-muted-foreground font-sans uppercase tracking-widest mb-6 text-center">
+        OmniDesk score
+      </p>
+
+      {/* Ring SVG */}
+      <div className="relative mb-5">
+        <svg width="128" height="128" viewBox="0 0 128 128" className="ring-glow">
+          {/* Track */}
+          <circle
+            cx="64" cy="64" r={radius}
+            fill="none"
+            stroke="hsl(var(--muted))"
+            strokeWidth="7"
+          />
+          {/* Progress arc */}
+          <circle
+            cx="64" cy="64" r={radius}
+            fill="none"
+            stroke="hsl(var(--foreground))"
+            strokeWidth="7"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
+            style={{
+              transform: "rotate(-90deg)",
+              transformOrigin: "50% 50%",
+              transition: "stroke-dashoffset 1.4s cubic-bezier(0.16,1,0.3,1)",
+            }}
+          />
+          {/* Glow dot at tip */}
+          {composite > 3 && (() => {
+            const angle = ((composite / 100) * 360 - 90) * (Math.PI / 180);
+            const dotX = 64 + radius * Math.cos(angle);
+            const dotY = 64 + radius * Math.sin(angle);
+            return (
+              <circle
+                cx={dotX} cy={dotY} r="5"
+                fill="hsl(var(--foreground))"
+                opacity="0.9"
+              />
+            );
+          })()}
+          {/* Score text */}
+          <text
+            x="64" y="60"
+            textAnchor="middle"
+            fontSize="28"
+            fontWeight="700"
+            fontFamily="Playfair Display, Georgia, serif"
+            fill="hsl(var(--foreground))"
+            className="animate-score"
+          >
+            {composite}
+          </text>
+          <text
+            x="64" y="77"
+            textAnchor="middle"
+            fontSize="10"
+            fontFamily="Inter, sans-serif"
+            fill="hsl(var(--muted-foreground))"
+          >
+            / 100
+          </text>
+        </svg>
+      </div>
+
+      {/* Breakdown rows */}
+      <div className="w-full space-y-3">
+        {[
+          { label: "Roadmap", value: Math.round(roadmapPct), max: 100, color: "bg-foreground", weight: "50%" },
+          { label: "Integrations", value: Math.min(bloomedNodes, 4), max: 4, color: "bg-omni-leaf", weight: "30%" },
+          { label: "Strategy chat", value: Math.min(chatExchanges, 8), max: 8, color: "bg-omni-gold", weight: "20%" },
+        ].map((row) => (
+          <div key={row.label}>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-sans text-muted-foreground">{row.label}</span>
+              <span className="text-xs font-sans font-semibold text-foreground">
+                {row.value}/{row.max}
+                <span className="text-muted-foreground font-normal ml-1">· {row.weight}</span>
+              </span>
+            </div>
+            <div className="h-1 bg-muted rounded-full overflow-hidden">
+              <div
+                className={`h-full ${row.color} rounded-full transition-all duration-1000 ease-out`}
+                style={{ width: `${(row.value / row.max) * 100}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────
+   AI "NEXT ACTION" CARD
+───────────────────────────────────────────────────────────── */
+function NextActionCard({ user, items, nodes, onboarding }: {
   user: { username?: string } | null;
   items: { status: string; title: string; category: string }[];
   nodes: { state: string; tool: string }[];
+  onboarding: { user_type?: string; primary_goal?: string } | null;
 }) {
   const [suggestion, setSuggestion] = useState("");
   const [loading, setLoading] = useState(false);
@@ -28,21 +149,25 @@ function NextActionCard({ user, items, nodes }: {
     const cached = sessionStorage.getItem("omni-next-action");
     if (cached) { setSuggestion(cached); return; }
 
-    const fetch = async () => {
+    const runFetch = async () => {
       setLoading(true);
       const pending = items.filter((i) => i.status === "pending").slice(0, 3).map((i) => i.title);
       const seeds = nodes.filter((n) => n.state === "seed").map((n) => n.tool);
+      const personaContext = onboarding?.user_type
+        ? `User profile: ${onboarding.user_type}. Goal: "${onboarding.primary_goal || "not specified"}".`
+        : "";
 
       const { data, error } = await supabase.functions.invoke("omni-chat", {
         body: {
           messages: [
             {
               role: "user",
-              content: `Based on this user's business status, give ONE concise next action (max 2 sentences, direct advice, no fluff):
+              content: `${personaContext}
+Based on this user's business status, give ONE concise next action (max 2 sentences, direct advice, no preamble):
 Pending roadmap tasks: ${pending.join(", ") || "none"}
 Unconnected tools: ${seeds.join(", ") || "none"}
 Completed tasks: ${items.filter((i) => i.status === "done").length} of ${items.length}
-Reply with just the action recommendation, no preamble.`,
+Reply with just the action recommendation.`,
             },
           ],
           userName: user.username,
@@ -60,7 +185,7 @@ Reply with just the action recommendation, no preamble.`,
       sessionStorage.setItem("omni-next-action", msg);
       setLoading(false);
     };
-    fetch();
+    runFetch();
     return () => { cancelled = true; };
   }, [user?.username]);
 
@@ -91,7 +216,9 @@ Reply with just the action recommendation, no preamble.`,
   );
 }
 
-/* ─── Recharts bar chart for roadmap completions per week ─── */
+/* ─────────────────────────────────────────────────────────────
+   RECHARTS BAR CHART
+───────────────────────────────────────────────────────────── */
 function RoadmapChart({ items }: { items: { week: number; status: string }[] }) {
   const weeks = [1, 2, 3, 4];
   const data = weeks.map((w) => {
@@ -134,41 +261,42 @@ function RoadmapChart({ items }: { items: { week: number; status: string }[] }) 
         <YAxis hide allowDecimals={false} />
         <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--muted))", borderRadius: 6 }} />
         <Bar dataKey="done" name="done" radius={[4, 4, 0, 0]} maxBarSize={20}>
-          {data.map((_, i) => (
-            <Cell key={i} fill="hsl(var(--foreground))" opacity={0.85} />
-          ))}
+          {data.map((_, i) => <Cell key={i} fill="hsl(var(--foreground))" opacity={0.85} />)}
         </Bar>
         <Bar dataKey="inProgress" name="in progress" radius={[4, 4, 0, 0]} maxBarSize={20}>
-          {data.map((_, i) => (
-            <Cell key={i} fill="hsl(38 85% 55%)" opacity={0.7} />
-          ))}
+          {data.map((_, i) => <Cell key={i} fill="hsl(38 85% 55%)" opacity={0.7} />)}
         </Bar>
         <Bar dataKey="pending" name="pending" radius={[4, 4, 0, 0]} maxBarSize={20}>
-          {data.map((_, i) => (
-            <Cell key={i} fill="hsl(var(--muted-foreground))" opacity={0.25} />
-          ))}
+          {data.map((_, i) => <Cell key={i} fill="hsl(var(--muted-foreground))" opacity={0.25} />)}
         </Bar>
       </BarChart>
     </ResponsiveContainer>
   );
 }
 
-/* ─── Node health grid ─── */
+/* ─────────────────────────────────────────────────────────────
+   NODE HEALTH GRID
+───────────────────────────────────────────────────────────── */
 function NodeHealthGrid({ nodes }: { nodes: { tool: string; state: string; uptime: number; label: string }[] }) {
-  const TOOL_CONFIGS_LOCAL: Record<string, { color: string; logo: string }> = {
-    stripe: { color: "#635BFF", logo: "S" },
-    shopify: { color: "#96BF48", logo: "🛍" },
+  const toolColors: Record<string, { color: string; logo: string }> = {
+    paystack: { color: "#00C3F7", logo: "P" },
+    flutterwave: { color: "#F5A623", logo: "F" },
+    whatsapp: { color: "#25D366", logo: "W" },
+    google_workspace: { color: "#4285F4", logo: "G" },
     make: { color: "#6D00CC", logo: "M" },
     mailchimp: { color: "#FFE01B", logo: "✉" },
-    quickbooks: { color: "#2CA01C", logo: "QB" },
-    notion: { color: "#1A1A1A", logo: "N" },
+    notion: { color: "#888", logo: "N" },
+    instagram: { color: "#E1306C", logo: "IG" },
     slack: { color: "#4A154B", logo: "#" },
+    stripe: { color: "#635BFF", logo: "S" },
+    shopify: { color: "#96BF48", logo: "🛍" },
+    quickbooks: { color: "#2CA01C", logo: "QB" },
   };
 
   return (
     <div className="grid grid-cols-2 gap-3">
       {nodes.slice(0, 4).map((node) => {
-        const t = TOOL_CONFIGS_LOCAL[node.tool] ?? { color: "#888", logo: "?" };
+        const t = toolColors[node.tool] ?? { color: "#888", logo: "?" };
         const isBloom = node.state === "bloom";
         const isSprout = node.state === "sprout";
         return (
@@ -182,12 +310,9 @@ function NodeHealthGrid({ nodes }: { nodes: { tool: string; state: string; uptim
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold font-sans text-foreground truncate">{node.label}</p>
               <div className="flex items-center gap-2 mt-1">
-                <span
-                  className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                    isBloom ? "bg-omni-leaf animate-pulse" :
-                    isSprout ? "bg-omni-gold" : "bg-muted-foreground opacity-30"
-                  }`}
-                />
+                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                  isBloom ? "bg-omni-leaf animate-pulse" : isSprout ? "bg-omni-gold" : "bg-muted-foreground opacity-30"
+                }`} />
                 <span className="text-[11px] text-muted-foreground font-sans">
                   {isBloom ? `${node.uptime}% uptime` : isSprout ? "Configuring" : "Not planted"}
                 </span>
@@ -200,10 +325,26 @@ function NodeHealthGrid({ nodes }: { nodes: { tool: string; state: string; uptim
   );
 }
 
+/* ─────────────────────────────────────────────────────────────
+   HOME PAGE
+───────────────────────────────────────────────────────────── */
 export default function HomePage() {
   const { user } = useAuth();
   const { items } = useRoadmap();
   const { nodes } = useWorkflowNodes();
+  const { onboarding } = useOnboarding();
+  const [chatExchanges, setChatExchanges] = useState(0);
+
+  // Load chat exchange count for progress ring
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from("chat_messages")
+      .select("id", { count: "exact" })
+      .eq("user_id", user.id)
+      .eq("role", "user")
+      .then(({ count }) => { if (count) setChatExchanges(count); });
+  }, [user]);
 
   const done = items.filter((i) => i.status === "done").length;
   const inProgress = items.filter((i) => i.status === "in_progress").length;
@@ -213,6 +354,10 @@ export default function HomePage() {
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+
+  const personaLabel = onboarding?.user_type
+    ? { finder: "Finder", grower: "Grower", scaler: "Scaler" }[onboarding.user_type] ?? onboarding.user_type
+    : null;
 
   return (
     <div className="min-h-screen bg-background p-6 md:p-10">
@@ -224,19 +369,27 @@ export default function HomePage() {
         <h1 className="font-serif text-5xl md:text-6xl text-foreground leading-tight">
           {greeting}, {firstName}.
         </h1>
-        <p className="text-muted-foreground font-sans mt-3 text-lg">
-          Your business is{" "}
-          <span className="text-omni-leaf font-semibold">
-            {blooming > 0 ? `${blooming} integration${blooming > 1 ? "s" : ""} live` : "ready to grow"}
-          </span>.
-        </p>
+        <div className="flex items-center gap-3 mt-3 flex-wrap">
+          <p className="text-muted-foreground font-sans text-lg">
+            Your business is{" "}
+            <span className="text-omni-leaf font-semibold">
+              {blooming > 0 ? `${blooming} integration${blooming > 1 ? "s" : ""} live` : "ready to grow"}
+            </span>.
+          </p>
+          {personaLabel && (
+            <span className="text-xs font-sans px-3 py-1.5 rounded-full bg-muted text-muted-foreground">
+              {personaLabel}
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      {/* Stat cards + progress ring row */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+        {/* Stat cards (4 cols on md) */}
         {[
           { label: "Roadmap progress", value: `${progress}%`, sub: `${done} of ${items.length} complete`, color: "text-omni-leaf", bg: "bg-omni-leaf/8" },
-          { label: "Active integrations", value: String(blooming), sub: "Blooming in flowerbed", color: "text-omni-bloom", bg: "bg-omni-bloom/8" },
+          { label: "Live integrations", value: String(blooming), sub: "Blooming in flowerbed", color: "text-omni-bloom", bg: "bg-omni-bloom/8" },
           { label: "In progress", value: String(inProgress), sub: "Tasks active now", color: "text-omni-gold", bg: "bg-omni-gold/8" },
           { label: "Seeds ready", value: String(nodes.filter((n) => n.state === "seed").length), sub: "Waiting to plant", color: "text-muted-foreground", bg: "bg-muted/40" },
         ].map((stat, i) => (
@@ -249,16 +402,25 @@ export default function HomePage() {
             <p className="text-xs text-muted-foreground font-sans">{stat.sub}</p>
           </div>
         ))}
+
+        {/* Progress ring — 5th cell, spans full row on mobile */}
+        <div className="col-span-2 md:col-span-1">
+          <ProgressRing
+            roadmapPct={progress}
+            bloomedNodes={blooming}
+            chatExchanges={chatExchanges}
+          />
+        </div>
       </div>
 
       {/* AI Next Action */}
       <div className="mb-8">
-        <NextActionCard user={user} items={items} nodes={nodes} />
+        <NextActionCard user={user} items={items} nodes={nodes} onboarding={onboarding} />
       </div>
 
       {/* Analytics section */}
       <div className="grid md:grid-cols-2 gap-6 mb-8">
-        {/* Roadmap completions chart */}
+        {/* Roadmap chart */}
         <div className="surface-card p-6 animate-fade-up stagger-2">
           <div className="flex items-center justify-between mb-5">
             <div>
@@ -305,7 +467,7 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Quick actions */}
+      {/* Quick action cards */}
       <div className="grid md:grid-cols-3 gap-5 mb-8">
         {[
           {

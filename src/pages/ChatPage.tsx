@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { useOnboarding } from "@/hooks/useOnboarding";
 import { supabase } from "@/lib/supabase";
 import { Send, Loader2, Flower2, RotateCcw, Sparkles } from "lucide-react";
 import type { ChatMessage } from "@/types";
@@ -56,24 +57,13 @@ function BloomNotification({ onDismiss }: { onDismiss: () => void }) {
             OmniDesk has seeded your <strong>Roadmap</strong> with personalised milestones and activated your <strong>Workflow Flowerbed</strong> with integration nodes — based on everything you've shared.
           </p>
           <div className="flex gap-2">
-            <a
-              href="/roadmaps"
-              className="text-xs font-semibold font-sans px-4 py-2 bg-foreground text-background transition-all hover:opacity-80"
-              style={{ borderRadius: "50px" }}
-            >
+            <a href="/roadmaps" className="text-xs font-semibold font-sans px-4 py-2 bg-foreground text-background transition-all hover:opacity-80" style={{ borderRadius: "50px" }}>
               View Roadmap
             </a>
-            <a
-              href="/flowerbed"
-              className="text-xs font-semibold font-sans px-4 py-2 text-foreground transition-all hover:bg-muted"
-              style={{ borderRadius: "50px", border: "1px solid rgba(26,26,26,0.10)" }}
-            >
+            <a href="/flowerbed" className="text-xs font-semibold font-sans px-4 py-2 text-foreground transition-all hover:bg-muted" style={{ borderRadius: "50px", border: "1px solid rgba(26,26,26,0.10)" }}>
               Open Flowerbed
             </a>
-            <button
-              onClick={onDismiss}
-              className="text-xs text-muted-foreground font-sans px-3 py-2 hover:text-foreground transition-colors"
-            >
+            <button onClick={onDismiss} className="text-xs text-muted-foreground font-sans px-3 py-2 hover:text-foreground transition-colors">
               Dismiss
             </button>
           </div>
@@ -85,6 +75,7 @@ function BloomNotification({ onDismiss }: { onDismiss: () => void }) {
 
 export default function ChatPage() {
   const { user } = useAuth();
+  const { onboarding } = useOnboarding();
   const { updateNodeState, nodes } = useWorkflowNodes();
   const { refetch: refetchRoadmap } = useRoadmap();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -101,6 +92,7 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping, showBloomNotification]);
 
+  // Load existing chat history
   useEffect(() => {
     if (!user) return;
     (async () => {
@@ -117,14 +109,10 @@ export default function ChatPage() {
           content: m.content,
           timestamp: new Date(m.created_at),
         })));
-        setDbMessages(data.map((m) => ({ role: m.role, content: m.content })));
+        setDbMessages(data.map((m) => ({ role: m.role === "ai" ? "assistant" : m.role, content: m.content })));
         setHasStarted(true);
-        // Count existing user exchanges
         exchangeCount.current = data.filter((m) => m.role === "user").length;
-        // Check if bloom was already triggered
-        const hasBloomMsg = data.some(
-          (m) => m.role === "ai" && detectBloomTrigger(m.content)
-        );
+        const hasBloomMsg = data.some((m) => m.role === "ai" && detectBloomTrigger(m.content));
         if (hasBloomMsg) setBloomTriggered(true);
       }
     })();
@@ -135,20 +123,15 @@ export default function ChatPage() {
     await supabase.from("chat_messages").insert({ user_id: user.id, role, content });
   };
 
-  /* Trigger bloom — update first 2 seed nodes to bloom state */
   const triggerBloom = useCallback(async () => {
     if (bloomTriggered) return;
     setBloomTriggered(true);
-
     const seedNodes = nodes.filter((n) => n.state === "seed").slice(0, 2);
     for (const node of seedNodes) {
       await new Promise((r) => setTimeout(r, 600));
       updateNodeState(node.id, "bloom");
     }
-
-    // Refresh roadmap in background
     await refetchRoadmap();
-
     setShowBloomNotification(true);
     toast.success("🌸 Your workspace has bloomed!", {
       description: "Roadmap and Flowerbed updated with your strategy.",
@@ -158,7 +141,19 @@ export default function ChatPage() {
 
   const callAI = useCallback(async (history: { role: string; content: string }[]) => {
     const { data, error } = await supabase.functions.invoke("omni-chat", {
-      body: { messages: history, userName: user?.username },
+      body: {
+        messages: history,
+        userName: user?.username,
+        // Pass the user's onboarding context so AI personalises from day 1
+        onboarding: onboarding
+          ? {
+              user_type: onboarding.user_type,
+              primary_goal: onboarding.primary_goal,
+              business_idea: onboarding.business_idea,
+              bottleneck: onboarding.bottleneck,
+            }
+          : undefined,
+      },
     });
 
     if (error) {
@@ -170,12 +165,31 @@ export default function ChatPage() {
       return "I hit a snag on my end — mind trying again?";
     }
     return data?.content || "Something went quiet. Let's try that again.";
-  }, [user]);
+  }, [user, onboarding]);
+
+  // Generate a persona-aware opening greeting
+  const buildOpeningGreeting = () => {
+    const name = user?.username?.split(" ")[0] || "there";
+    const type = onboarding?.user_type;
+    const goal = onboarding?.primary_goal;
+
+    if (type === "finder") {
+      return `Hi ${name}! I can see you're on the hunt for the right business idea — that's actually one of the most exciting places to start.\n\nYou've got a blank canvas, which means we can build something genuinely tailored to you. No bad options here.\n\nTo kick us off: **what activities or topics do you find yourself talking about or doing for free, without anyone asking you to?**`;
+    }
+    if (type === "grower") {
+      return `Hi ${name}! I see you're already in the game — building something real while juggling everything else. That takes serious drive.\n\n${goal ? `Your goal: *"${goal}"* — let's make that happen.\n\n` : ""}The most common thing that kills early hustles isn't lack of effort, it's doing everything manually. Let's find your biggest bottleneck first.\n\n**What's the one thing in your business that currently takes the most time but gives you the least return?**`;
+    }
+    if (type === "scaler") {
+      return `Hi ${name}! You're in the scaling stage — this is where the real leverage comes in, and also where most businesses leave money on the table.\n\n${goal ? `You want to: *"${goal}"* — I'm here to help you build the systems to get there.\n\n` : ""}Before we map your next 90 days, I need to understand your current setup.\n\n**What does your current tech stack look like, and where do you feel the most friction operationally?**`;
+    }
+    // Default if no persona
+    return `Hi ${name}! I'm OmniDesk — your AI business partner.\n\nBefore we build anything, I'd love to understand where you're at.\n\n**A)** I don't have a solid business idea yet — help me find one\n**B)** I have a side hustle, but I'm drowning in manual work\n**C)** I run a business and I'm ready to scale operations\n\nWhich fits best?`;
+  };
 
   const startConversation = async () => {
     setHasStarted(true);
     setIsTyping(true);
-    const greeting = `Hi! I'm OmniDesk — your AI business partner.\n\nBefore we build anything, I'd love to understand where you're at. Quick honest question:\n\n**A)** I don't have a solid business idea yet — help me find one\n**B)** I have a side hustle, but I'm drowning in manual work\n**C)** I run a business and I'm ready to scale operations\n\nWhich fits best?`;
+    const greeting = buildOpeningGreeting();
     const aiMsg: ChatMessage = { id: Date.now().toString(), role: "ai", content: greeting, timestamp: new Date() };
     setMessages([aiMsg]);
     setDbMessages([{ role: "assistant", content: greeting }]);
@@ -191,7 +205,6 @@ export default function ChatPage() {
     const userMsg: ChatMessage = { id: Date.now().toString(), role: "user", content: text, timestamp: new Date() };
     setMessages((prev) => [...prev, userMsg]);
     await saveMessage("user", text);
-
     exchangeCount.current += 1;
 
     const updatedHistory = [...dbMessages, { role: "user", content: text }];
@@ -205,15 +218,8 @@ export default function ChatPage() {
     await saveMessage("ai", reply);
     setIsTyping(false);
 
-    // Bloom trigger: after 4+ exchanges OR if AI mentions seeding
-    const shouldBloom =
-      !bloomTriggered &&
-      (exchangeCount.current >= 4 || detectBloomTrigger(reply));
-
-    if (shouldBloom) {
-      // Small delay so the message renders first
-      setTimeout(() => triggerBloom(), 800);
-    }
+    const shouldBloom = !bloomTriggered && (exchangeCount.current >= 4 || detectBloomTrigger(reply));
+    if (shouldBloom) setTimeout(() => triggerBloom(), 800);
   };
 
   const clearChat = async () => {
@@ -234,17 +240,18 @@ export default function ChatPage() {
 
   const renderContent = (content: string) =>
     content.split("\n").map((line, i) => {
-      const html = line.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+      const html = line.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>").replace(/\*(.*?)\*/g, "<em>$1</em>");
       return <p key={i} dangerouslySetInnerHTML={{ __html: html }} className={line === "" ? "h-2" : ""} />;
     });
+
+  const personaLabel = onboarding?.user_type
+    ? { finder: "Finder", grower: "Grower", scaler: "Scaler" }[onboarding.user_type] ?? ""
+    : null;
 
   return (
     <div className="h-screen flex flex-col bg-background">
       {/* Header */}
-      <div
-        className="px-6 md:px-8 py-5 flex items-center gap-4 flex-shrink-0"
-        style={{ borderBottom: "1px solid rgba(26,26,26,0.08)" }}
-      >
+      <div className="px-6 md:px-8 py-5 flex items-center gap-4 flex-shrink-0" style={{ borderBottom: "1px solid rgba(26,26,26,0.08)" }}>
         <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "hsl(var(--muted))" }}>
           <Flower2 size={16} strokeWidth={1.5} />
         </div>
@@ -257,18 +264,18 @@ export default function ChatPage() {
             <span className="w-1.5 h-1.5 rounded-full bg-omni-leaf animate-pulse" />
             Online
           </div>
+          {personaLabel && (
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-xs font-sans rounded-full bg-muted text-muted-foreground">
+              {personaLabel}
+            </div>
+          )}
           {bloomTriggered && (
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-xs text-omni-leaf font-sans rounded-full bg-omni-leaf/10">
-              <Sparkles size={11} />
-              Bloomed
+              <Sparkles size={11} /> Bloomed
             </div>
           )}
           {hasStarted && (
-            <button
-              onClick={clearChat}
-              className="w-9 h-9 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors rounded-xl hover:bg-muted"
-              title="Clear conversation"
-            >
+            <button onClick={clearChat} className="w-9 h-9 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors rounded-xl hover:bg-muted" title="Clear conversation">
               <RotateCcw size={14} />
             </button>
           )}
@@ -283,6 +290,14 @@ export default function ChatPage() {
               <Flower2 size={32} strokeWidth={1} />
             </div>
             <h2 className="font-serif text-3xl text-foreground mb-4">Your AI business partner is ready.</h2>
+            {onboarding?.user_type && (
+              <p className="text-sm text-muted-foreground font-sans mb-4 px-4 py-3 bg-muted rounded-xl">
+                Signed up as <strong className="text-foreground capitalize">{onboarding.user_type}</strong>
+                {onboarding.primary_goal && (
+                  <> · Goal: <em>"{onboarding.primary_goal}"</em></>
+                )}
+              </p>
+            )}
             <p className="text-base text-muted-foreground font-sans mb-10 leading-relaxed">
               OmniDesk will interview you, understand your goals, and build a personalised roadmap and automation garden — all through natural conversation.
             </p>
@@ -295,14 +310,11 @@ export default function ChatPage() {
             {messages.map((msg) => (
               <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} animate-fade-up`}>
                 {msg.role === "ai" && (
-                  <div className="w-8 h-8 flex items-center justify-center flex-shrink-0 mt-0.5 mr-3"
-                    style={{ background: "hsl(var(--muted))", borderRadius: "10px" }}>
+                  <div className="w-8 h-8 flex items-center justify-center flex-shrink-0 mt-0.5 mr-3" style={{ background: "hsl(var(--muted))", borderRadius: "10px" }}>
                     <Flower2 size={13} strokeWidth={1.5} />
                   </div>
                 )}
-                <div className={`max-w-[80%] px-5 py-4 text-sm font-sans leading-relaxed space-y-1 ${
-                  msg.role === "ai" ? "chat-bubble-ai" : "chat-bubble-user"
-                }`}>
+                <div className={`max-w-[80%] px-5 py-4 text-sm font-sans leading-relaxed space-y-1 ${msg.role === "ai" ? "chat-bubble-ai" : "chat-bubble-user"}`}>
                   {renderContent(msg.content)}
                   <p className="text-[10px] opacity-30 mt-2 pt-1" style={{ borderTop: "1px solid rgba(128,128,128,0.15)" }}>
                     {msg.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -313,8 +325,7 @@ export default function ChatPage() {
 
             {isTyping && (
               <div className="flex justify-start animate-fade-in">
-                <div className="w-8 h-8 flex items-center justify-center flex-shrink-0 mt-0.5 mr-3"
-                  style={{ background: "hsl(var(--muted))", borderRadius: "10px" }}>
+                <div className="w-8 h-8 flex items-center justify-center flex-shrink-0 mt-0.5 mr-3" style={{ background: "hsl(var(--muted))", borderRadius: "10px" }}>
                   <Flower2 size={13} strokeWidth={1.5} />
                 </div>
                 <div className="chat-bubble-ai px-5 py-4 flex items-center gap-2">
@@ -325,11 +336,7 @@ export default function ChatPage() {
               </div>
             )}
 
-            {/* Bloom notification card */}
-            {showBloomNotification && (
-              <BloomNotification onDismiss={() => setShowBloomNotification(false)} />
-            )}
-
+            {showBloomNotification && <BloomNotification onDismiss={() => setShowBloomNotification(false)} />}
             <div ref={bottomRef} />
           </div>
         )}
@@ -337,10 +344,7 @@ export default function ChatPage() {
 
       {/* Input */}
       {hasStarted && (
-        <div
-          className="px-4 md:px-8 py-4 flex-shrink-0"
-          style={{ borderTop: "1px solid rgba(26,26,26,0.08)", background: "hsl(var(--background))" }}
-        >
+        <div className="px-4 md:px-8 py-4 flex-shrink-0" style={{ borderTop: "1px solid rgba(26,26,26,0.08)", background: "hsl(var(--background))" }}>
           <div className="max-w-2xl mx-auto flex gap-3 items-end">
             <textarea
               value={input}
