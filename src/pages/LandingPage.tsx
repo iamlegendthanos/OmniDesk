@@ -90,18 +90,18 @@ export default function LandingPage() {
           ))}
         </nav>
 
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex items-center gap-2">
           <button
             onClick={toggle}
-            className="w-9 h-9 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors rounded-full hover:bg-muted"
+            className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors rounded-full hover:bg-muted flex-shrink-0"
           >
-            {theme === "light" ? <Moon size={16} strokeWidth={1.5} /> : <Sun size={16} strokeWidth={1.5} />}
+            {theme === "light" ? <Moon size={15} strokeWidth={1.5} /> : <Sun size={15} strokeWidth={1.5} />}
           </button>
-          <Link to="/login" className="btn-ghost-pill px-5 py-2.5 text-sm">
+          <Link to="/login" className="hidden sm:inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-sans font-medium text-foreground hover:bg-muted transition-all" style={{ borderRadius: "9999px", border: "1px solid rgba(26,26,26,0.12)" }}>
             Sign in
           </Link>
-          <Link to="/login" className="btn-pill px-6 py-2.5 text-sm flex items-center gap-1.5">
-            Launch App <Zap size={13} />
+          <Link to="/login" className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs sm:text-sm font-sans font-semibold bg-foreground text-background hover:opacity-85 transition-opacity flex-shrink-0" style={{ borderRadius: "9999px", whiteSpace: "nowrap" }}>
+            <span className="hidden sm:inline">Launch</span><span className="sm:hidden">Start</span> <Zap size={12} />
           </Link>
         </div>
       </header>
