@@ -521,10 +521,24 @@ html { color-scheme: dark; }
 }
 
 /* ─────────────────────────────────────────────────────────────
+   SAFE AREA & MOBILE BOTTOM NAV
+───────────────────────────────────────────────────────────── */
+.pb-safe {
+  padding-bottom: max(72px, calc(60px + env(safe-area-inset-bottom, 0px)));
+}
+
+/* Ensure bottom nav doesn't overlap content on notched phones */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .pb-safe {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
    CALENDAR GRID
 ───────────────────────────────────────────────────────────── */
 .cal-day {
-  min-height: 64px;
+  min-height: 52px;
   border-radius: 10px;
   transition: background 0.15s;
 }

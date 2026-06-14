@@ -1,0 +1,56 @@
+{
+  "name": "OmniDesk — AI Business Builder",
+  "short_name": "OmniDesk",
+  "description": "Build a business at the speed of conversation. Your AI business partner.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#12100e",
+  "theme_color": "#12100e",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/icons/screenshot-wide.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide"
+    },
+    {
+      "src": "/icons/screenshot-narrow.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "shortcuts": [
+    {
+      "name": "Strategy Chat",
+      "url": "/chat",
+      "description": "Open OmniDesk AI chat"
+    },
+    {
+      "name": "Roadmap",
+      "url": "/roadmaps",
+      "description": "View your 30-day roadmap"
+    },
+    {
+      "name": "Flowerbed",
+      "url": "/flowerbed",
+      "description": "Open your workflow flowerbed"
+    }
+  ]
+}

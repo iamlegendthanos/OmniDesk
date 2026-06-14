@@ -2,8 +2,16 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/icons/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="OmniDesk" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#12100e" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <title>OmniDesk — AI Business Builder</title>
     <meta name="description" content="Build a business at the speed of conversation. OmniDesk is your AI business partner." />
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -22,6 +30,13 @@
         if (t === 'light') document.documentElement.classList.remove('dark');
         else document.documentElement.classList.add('dark');
       } catch(e) {}
+
+      /* Register service worker for PWA */
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js').catch(function() {});
+        });
+      }
     </script>
   </head>
   <body>

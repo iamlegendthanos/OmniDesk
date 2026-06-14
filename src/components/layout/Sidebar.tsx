@@ -2,6 +2,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import OmniLogo from "@/components/layout/OmniLogo";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
+import NotificationBell from "@/components/features/NotificationBell";
 import {
   Home, MessageCircle, Map, Flower2, Settings,
   Sun, Moon, LogOut, X, ChevronRight,
@@ -11,7 +12,7 @@ const NAV_ITEMS = [
   { to: "/dashboard", icon: Home, label: "Home" },
   { to: "/chat", icon: MessageCircle, label: "OmniDesk Chat" },
   { to: "/roadmaps", icon: Map, label: "Roadmaps" },
-  { to: "/flowerbed", icon: Flower2, label: "Workflow Flowerbed" },
+  { to: "/flowerbed", icon: Flower2, label: "Flowerbed" },
   { to: "/settings", icon: Settings, label: "Settings" },
 ];
 
@@ -48,14 +49,18 @@ export default function Sidebar({ mobile = false, onClose }: SidebarProps) {
             <p className="text-[11px] text-muted-foreground font-sans leading-none mt-0.5 tracking-wide">Business AI</p>
           </div>
         </div>
-        {mobile && onClose && (
-          <button
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-muted"
-          >
-            <X size={15} />
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {/* Notification bell in sidebar header */}
+          <NotificationBell />
+          {mobile && onClose && (
+            <button
+              onClick={onClose}
+              className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-muted"
+            >
+              <X size={15} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Section label */}
@@ -75,7 +80,7 @@ export default function Sidebar({ mobile = false, onClose }: SidebarProps) {
               className={`nav-item ${isActive ? "active" : ""}`}
             >
               <div className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all ${
-                isActive ? "bg-background/15" : "bg-muted group-hover:bg-muted"
+                isActive ? "bg-background/15" : "bg-muted"
               }`}>
                 <Icon size={15} strokeWidth={1.5} />
               </div>
