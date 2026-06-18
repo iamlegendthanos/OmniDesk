@@ -263,7 +263,7 @@ export default function SettingsPage() {
     load();
   }, [user]);
 
-  // Handle OAuth connection initiation
+  // Handle OAuth connection initiation via postMessage + popup
   const handleConnect = async (provider: string, extraFields: Record<string, string>) => {
     if (!user) return;
     const { data: { session } } = await supabase.auth.getSession();
@@ -271,33 +271,70 @@ export default function SettingsPage() {
 
     const body: Record<string, string> = { provider, ...extraFields };
 
+    // Invoke the edge function with explicit auth header
     const { data, error } = await supabase.functions.invoke("oauth-handler", {
       body,
+      headers: { Authorization: `Bearer ${session.access_token}` },
     });
 
-    if (error) {
-      toast.error(`Failed to initiate ${provider} OAuth.`);
+    if (error || !data?.authUrl) {
+      let errMsg = `Failed to initiate ${provider} connection.`;
+      if (error) {
+        try {
+          const { FunctionsHttpError } = await import("@supabase/supabase-js");
+          if (error instanceof FunctionsHttpError) {
+            const txt = await error.context?.text();
+            errMsg = txt || errMsg;
+          }
+        } catch { /* ignore */ }
+      }
+      toast.error(errMsg);
       return;
     }
 
-    if (data?.authUrl) {
-      // Open OAuth popup
-      const popup = window.open(data.authUrl, `oauth_${provider}`, "width=600,height=700,scrollbars=yes");
-      if (!popup) {
-        toast.error("Popup blocked! Please allow popups for this site.");
-        return;
-      }
-      // Poll for completion
-      const pollInterval = setInterval(async () => {
-        if (popup.closed) {
-          clearInterval(pollInterval);
-          // Refresh connections
-          const { data: refreshed } = await supabase.from("oauth_connections").select("*").eq("user_id", user.id);
-          if (refreshed) setConnections(refreshed as OAuthConnection[]);
-          toast.success(`${provider} connection updated.`);
-        }
-      }, 800);
+    // Open OAuth popup
+    const popup = window.open(data.authUrl, `oauth_${provider}`, "width=620,height=720,scrollbars=yes,resizable=yes");
+    if (!popup) {
+      toast.error("Popup blocked! Please allow popups for this site.");
+      return;
     }
+
+    // Listen for postMessage from the OAuth callback page
+    const handleMessage = async (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const msg = event.data;
+      if (!msg || (msg.type !== "OAUTH_SUCCESS" && msg.type !== "OAUTH_ERROR")) return;
+
+      window.removeEventListener("message", handleMessage);
+
+      if (msg.type === "OAUTH_SUCCESS") {
+        // Refresh connections from DB
+        const { data: refreshed } = await supabase
+          .from("oauth_connections")
+          .select("*")
+          .eq("user_id", user.id);
+        if (refreshed) setConnections(refreshed as OAuthConnection[]);
+        toast.success(`${msg.provider.replace("_", " ")} connected successfully! 🌸`);
+      } else {
+        toast.error(`Connection failed: ${msg.error?.replace("_", " ") ?? "Unknown error"}`);
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+
+    // Fallback: if popup is closed manually without postMessage
+    const fallbackPoll = setInterval(async () => {
+      if (popup.closed) {
+        clearInterval(fallbackPoll);
+        window.removeEventListener("message", handleMessage);
+        // Silently refresh connections in case it succeeded
+        const { data: refreshed } = await supabase
+          .from("oauth_connections")
+          .select("*")
+          .eq("user_id", user.id);
+        if (refreshed) setConnections(refreshed as OAuthConnection[]);
+      }
+    }, 1000);
   };
 
   const handleDisconnect = async (provider: string) => {

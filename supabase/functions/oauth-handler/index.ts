@@ -70,17 +70,17 @@ serve(async (req) => {
       const error = url.searchParams.get("error");
 
       if (error) {
-        return redirectToApp(`/settings?oauth_error=${encodeURIComponent(error)}`);
+        return redirectToApp(`/oauth/callback?oauth_error=${encodeURIComponent(error)}`);
       }
       if (!code || !stateParam) {
-        return redirectToApp("/settings?oauth_error=missing_params");
+        return redirectToApp("/oauth/callback?oauth_error=missing_params");
       }
 
       let stateData: { userId: string; provider: string; shop_domain?: string; spreadsheet_id?: string };
       try {
         stateData = JSON.parse(atob(stateParam));
       } catch {
-        return redirectToApp("/settings?oauth_error=invalid_state");
+        return redirectToApp("/oauth/callback?oauth_error=invalid_state");
       }
 
       const { userId, provider, shop_domain, spreadsheet_id } = stateData;
@@ -143,7 +143,7 @@ serve(async (req) => {
 
       if (!tokenData.access_token) {
         console.error(`OAuth token exchange failed for ${provider}`);
-        return redirectToApp("/settings?oauth_error=token_exchange_failed");
+        return redirectToApp("/oauth/callback?oauth_error=token_exchange_failed");
       }
 
       // ── Upsert connection record ──
@@ -172,7 +172,7 @@ serve(async (req) => {
 
       if (upsertError) {
         console.error("upsert error:", upsertError);
-        return redirectToApp("/settings?oauth_error=save_failed");
+        return redirectToApp("/oauth/callback?oauth_error=save_failed");
       }
 
       // Seed notification
@@ -184,7 +184,7 @@ serve(async (req) => {
         metadata: { provider },
       });
 
-      return redirectToApp(`/settings?oauth_success=${provider}`);
+      return redirectToApp(`/oauth/callback?oauth_success=${provider}`);
     }
 
     // ── DISCONNECT: POST /disconnect ──

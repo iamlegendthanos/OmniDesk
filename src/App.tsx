@@ -11,6 +11,7 @@ import ChatPage from "@/pages/ChatPage";
 import RoadmapsPage from "@/pages/RoadmapsPage";
 import FlowerbedPage from "@/pages/FlowerbedPage";
 import SettingsPage from "@/pages/SettingsPage";
+import OAuthCallback from "@/pages/OAuthCallback";
 import { useOnboarding } from "@/hooks/useOnboarding";
 import { useEffect } from "react";
 
@@ -88,6 +89,9 @@ function AppRoutes() {
         <Route path="/flowerbed" element={<FlowerbedPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
+
+      {/* OAuth popup callback — public, no auth required */}
+      <Route path="/oauth/callback" element={<OAuthCallback />} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
