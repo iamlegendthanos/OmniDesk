@@ -32,7 +32,7 @@ export interface WorkflowNode {
   id: string;
   node_key: string;
   label: string;
-  tool: "stripe" | "shopify" | "make" | "mailchimp" | "quickbooks" | "notion" | "slack";
+  tool: string;
   state: NodeState;
   category: "marketing" | "sales" | "operations" | "finance";
   position: { x: number; y: number };

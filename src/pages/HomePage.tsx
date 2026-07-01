@@ -1,141 +1,62 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoadmap } from "@/hooks/useRoadmap";
 import { useWorkflowNodes } from "@/hooks/useWorkflowNodes";
 import { useOnboarding } from "@/hooks/useOnboarding";
 import { supabase } from "@/lib/supabase";
 import { FunctionsHttpError } from "@supabase/supabase-js";
+import { TOOL_CONFIGS } from "@/constants";
 import {
   MessageCircle, Map, Flower2, ArrowRight, TrendingUp,
-  Lightbulb, Loader2,
+  Lightbulb, Loader2, CheckCircle, ChevronRight, Zap,
+  Target, BarChart2, Activity,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 
+/* ── Greeting helper ── */
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+/* ── Persona pill ── */
+const PERSONA_META: Record<string, { emoji: string; label: string; color: string }> = {
+  finder: { emoji: "🔍", label: "Finder", color: "bg-omni-gold/10 text-omni-gold" },
+  grower: { emoji: "🌱", label: "Grower", color: "bg-omni-leaf/10 text-omni-leaf" },
+  scaler: { emoji: "🚀", label: "Scaler", color: "bg-omni-bloom/10 text-omni-bloom" },
+};
+
 /* ─────────────────────────────────────────────────────────────
-   ANIMATED CIRCULAR PROGRESS RING
+   PROGRESS RING — compact
 ───────────────────────────────────────────────────────────── */
-function ProgressRing({
-  roadmapPct,
-  bloomedNodes,
-  chatExchanges,
-}: {
-  roadmapPct: number;
-  bloomedNodes: number;
-  chatExchanges: number;
-}) {
-  // Composite score: roadmap 50% weight, bloom nodes 30%, chat 20%
-  const bloomScore = Math.min(bloomedNodes / 4, 1) * 100;
-  const chatScore = Math.min(chatExchanges / 8, 1) * 100;
-  const composite = Math.round(roadmapPct * 0.5 + bloomScore * 0.3 + chatScore * 0.2);
-
-  const radius = 52;
-  const circumference = 2 * Math.PI * radius; // ~326.7
-  const dashOffset = circumference - (composite / 100) * circumference;
-
+function ProgressRing({ score }: { score: number }) {
+  const r = 32;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - (score / 100) * circ;
   return (
-    <div className="surface-card p-7 flex flex-col items-center justify-center animate-fade-up stagger-1">
-      <p className="text-xs text-muted-foreground font-sans uppercase tracking-widest mb-6 text-center">
-        OmniDesk score
-      </p>
-
-      {/* Ring SVG */}
-      <div className="relative mb-5">
-        <svg width="128" height="128" viewBox="0 0 128 128" className="ring-glow">
-          {/* Track */}
-          <circle
-            cx="64" cy="64" r={radius}
-            fill="none"
-            stroke="hsl(var(--muted))"
-            strokeWidth="7"
-          />
-          {/* Progress arc */}
-          <circle
-            cx="64" cy="64" r={radius}
-            fill="none"
-            stroke="hsl(var(--foreground))"
-            strokeWidth="7"
-            strokeLinecap="round"
-            strokeDasharray={circumference}
-            strokeDashoffset={dashOffset}
-            style={{
-              transform: "rotate(-90deg)",
-              transformOrigin: "50% 50%",
-              transition: "stroke-dashoffset 1.4s cubic-bezier(0.16,1,0.3,1)",
-            }}
-          />
-          {/* Glow dot at tip */}
-          {composite > 3 && (() => {
-            const angle = ((composite / 100) * 360 - 90) * (Math.PI / 180);
-            const dotX = 64 + radius * Math.cos(angle);
-            const dotY = 64 + radius * Math.sin(angle);
-            return (
-              <circle
-                cx={dotX} cy={dotY} r="5"
-                fill="hsl(var(--foreground))"
-                opacity="0.9"
-              />
-            );
-          })()}
-          {/* Score text */}
-          <text
-            x="64" y="60"
-            textAnchor="middle"
-            fontSize="28"
-            fontWeight="700"
-            fontFamily="Playfair Display, Georgia, serif"
-            fill="hsl(var(--foreground))"
-            className="animate-score"
-          >
-            {composite}
-          </text>
-          <text
-            x="64" y="77"
-            textAnchor="middle"
-            fontSize="10"
-            fontFamily="Inter, sans-serif"
-            fill="hsl(var(--muted-foreground))"
-          >
-            / 100
-          </text>
-        </svg>
-      </div>
-
-      {/* Breakdown rows */}
-      <div className="w-full space-y-3">
-        {[
-          { label: "Roadmap", value: Math.round(roadmapPct), max: 100, color: "bg-foreground", weight: "50%" },
-          { label: "Integrations", value: Math.min(bloomedNodes, 4), max: 4, color: "bg-omni-leaf", weight: "30%" },
-          { label: "Strategy chat", value: Math.min(chatExchanges, 8), max: 8, color: "bg-omni-gold", weight: "20%" },
-        ].map((row) => (
-          <div key={row.label}>
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-sans text-muted-foreground">{row.label}</span>
-              <span className="text-xs font-sans font-semibold text-foreground">
-                {row.value}/{row.max}
-                <span className="text-muted-foreground font-normal ml-1">· {row.weight}</span>
-              </span>
-            </div>
-            <div className="h-1 bg-muted rounded-full overflow-hidden">
-              <div
-                className={`h-full ${row.color} rounded-full transition-all duration-1000 ease-out`}
-                style={{ width: `${(row.value / row.max) * 100}%` }}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+    <svg width="80" height="80" viewBox="0 0 80 80">
+      <circle cx="40" cy="40" r={r} fill="none" stroke="hsl(var(--muted))" strokeWidth="5" />
+      <circle cx="40" cy="40" r={r} fill="none"
+        stroke="hsl(var(--foreground))" strokeWidth="5" strokeLinecap="round"
+        strokeDasharray={circ} strokeDashoffset={offset}
+        style={{ transform: "rotate(-90deg)", transformOrigin: "50% 50%", transition: "stroke-dashoffset 1.2s cubic-bezier(0.16,1,0.3,1)" }}
+      />
+      <text x="40" y="44" textAnchor="middle" fontSize="16" fontWeight="700"
+        fontFamily="Playfair Display, serif" fill="hsl(var(--foreground))">{score}</text>
+    </svg>
   );
 }
 
 /* ─────────────────────────────────────────────────────────────
-   AI "NEXT ACTION" CARD
+   AI INSIGHT CARD
 ───────────────────────────────────────────────────────────── */
-function NextActionCard({ user, items, nodes, onboarding }: {
-  user: { username?: string } | null;
+function AiInsightCard({ user, items, nodes, onboarding }: {
+  user: { username?: string; id: string } | null;
   items: { status: string; title: string; category: string }[];
   nodes: { state: string; tool: string }[];
   onboarding: { user_type?: string; primary_goal?: string } | null;
@@ -145,128 +66,91 @@ function NextActionCard({ user, items, nodes, onboarding }: {
 
   useEffect(() => {
     if (!user) return;
-    let cancelled = false;
-    const cached = sessionStorage.getItem("omni-next-action");
+    const cached = sessionStorage.getItem("omni-next-action-v2");
     if (cached) { setSuggestion(cached); return; }
-
-    const runFetch = async () => {
+    let cancelled = false;
+    const run = async () => {
       setLoading(true);
       const pending = items.filter((i) => i.status === "pending").slice(0, 3).map((i) => i.title);
       const seeds = nodes.filter((n) => n.state === "seed").map((n) => n.tool);
-      const personaContext = onboarding?.user_type
-        ? `User profile: ${onboarding.user_type}. Goal: "${onboarding.primary_goal || "not specified"}".`
-        : "";
+      const personaCtx = onboarding?.user_type
+        ? `User profile: ${onboarding.user_type}. Goal: "${onboarding.primary_goal || "not specified"}".` : "";
 
       const { data, error } = await supabase.functions.invoke("omni-chat", {
         body: {
-          messages: [
-            {
-              role: "user",
-              content: `${personaContext}
-Based on this user's business status, give ONE concise next action (max 2 sentences, direct advice, no preamble):
-Pending roadmap tasks: ${pending.join(", ") || "none"}
-Unconnected tools: ${seeds.join(", ") || "none"}
-Completed tasks: ${items.filter((i) => i.status === "done").length} of ${items.length}
-Reply with just the action recommendation.`,
-            },
-          ],
+          messages: [{
+            role: "user",
+            content: `${personaCtx} Give ONE concise next action for this user (max 2 sentences, direct, no preamble): Pending tasks: ${pending.join(", ") || "none"}. Unconnected tools: ${seeds.join(", ") || "none"}. Completed: ${items.filter(i=>i.status==="done").length} of ${items.length}.`,
+          }],
           userName: user.username,
         },
       });
-
       if (cancelled) return;
-      let msg = "Start a chat session to get your personalised next action from OmniDesk.";
+      let msg = "Open the chat to get your personalised next action from OmniDesk.";
       if (!error && data?.content) {
         msg = data.content;
       } else if (error instanceof FunctionsHttpError) {
-        try { const t = await error.context?.text(); console.error("AI error:", t); } catch {}
+        try { await error.context?.text(); } catch {}
       }
       setSuggestion(msg);
-      sessionStorage.setItem("omni-next-action", msg);
+      sessionStorage.setItem("omni-next-action-v2", msg);
       setLoading(false);
     };
-    runFetch();
+    run();
     return () => { cancelled = true; };
   }, [user?.username]);
 
   return (
-    <div className="surface-card p-6 animate-fade-up stagger-3">
-      <div className="flex items-start gap-4">
-        <div className="w-10 h-10 rounded-xl bg-omni-gold/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-          <Lightbulb size={16} strokeWidth={1.5} className="text-omni-gold" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-2">
-            <p className="text-sm font-semibold font-sans text-foreground">OmniDesk recommends</p>
-            <span className="text-[10px] px-2 py-0.5 rounded-full text-omni-gold bg-omni-gold/10 font-sans font-semibold uppercase tracking-wide">AI</span>
+    <div className="flex items-start gap-4">
+      <div className="w-9 h-9 rounded-xl bg-omni-gold/10 flex items-center justify-center flex-shrink-0">
+        <Lightbulb size={15} strokeWidth={1.5} className="text-omni-gold" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-semibold font-sans text-muted-foreground uppercase tracking-wide mb-1.5">
+          OmniDesk recommends
+        </p>
+        {loading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground font-sans">
+            <Loader2 size={12} className="animate-spin" /> Analysing your workspace…
           </div>
-          {loading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground font-sans">
-              <Loader2 size={13} className="animate-spin" /> Analysing your workspace…
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground font-sans leading-relaxed">{suggestion}</p>
-          )}
-        </div>
-        <Link to="/chat" className="flex-shrink-0 text-xs font-sans font-semibold text-foreground flex items-center gap-1.5 hover:gap-3 transition-all duration-200 whitespace-nowrap">
-          Open chat <ArrowRight size={11} />
-        </Link>
+        ) : (
+          <p className="text-sm text-foreground font-sans leading-relaxed">{suggestion}</p>
+        )}
       </div>
     </div>
   );
 }
 
 /* ─────────────────────────────────────────────────────────────
-   RECHARTS BAR CHART
+   RECHARTS CHART
 ───────────────────────────────────────────────────────────── */
 function RoadmapChart({ items }: { items: { week: number; status: string }[] }) {
-  const weeks = [1, 2, 3, 4];
-  const data = weeks.map((w) => {
-    const weekItems = items.filter((i) => i.week === w);
+  const data = [1, 2, 3, 4].map((w) => {
+    const wk = items.filter((i) => i.week === w);
     return {
-      week: `Wk ${w}`,
-      done: weekItems.filter((i) => i.status === "done").length,
-      inProgress: weekItems.filter((i) => i.status === "in_progress").length,
-      pending: weekItems.filter((i) => i.status === "pending").length,
+      week: `W${w}`,
+      done: wk.filter((i) => i.status === "done").length,
+      active: wk.filter((i) => i.status === "in_progress").length,
+      pending: wk.filter((i) => i.status === "pending").length,
     };
   });
 
-  const CustomTooltip = ({ active, payload, label }: {
-    active?: boolean;
-    payload?: { name: string; value: number; color: string }[];
-    label?: string;
-  }) => {
-    if (!active || !payload?.length) return null;
-    return (
-      <div className="glass-card px-4 py-3 text-xs font-sans" style={{ minWidth: 120 }}>
-        <p className="font-semibold text-foreground mb-2">{label}</p>
-        {payload.map((p) => (
-          <div key={p.name} className="flex items-center justify-between gap-4 mb-1">
-            <span style={{ color: p.color }} className="capitalize">{p.name}</span>
-            <span className="font-semibold text-foreground">{p.value}</span>
-          </div>
-        ))}
-      </div>
-    );
-  };
-
   return (
-    <ResponsiveContainer width="100%" height={140}>
+    <ResponsiveContainer width="100%" height={100}>
       <BarChart data={data} barGap={2} barCategoryGap="30%">
-        <XAxis
-          dataKey="week"
-          tick={{ fontSize: 11, fontFamily: "Inter", fill: "hsl(var(--muted-foreground))" }}
-          axisLine={false} tickLine={false}
-        />
+        <XAxis dataKey="week" tick={{ fontSize: 10, fontFamily: "Inter", fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
         <YAxis hide allowDecimals={false} />
-        <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--muted))", borderRadius: 6 }} />
-        <Bar dataKey="done" name="done" radius={[4, 4, 0, 0]} maxBarSize={20}>
+        <Tooltip
+          cursor={{ fill: "hsl(var(--muted))", borderRadius: 6 }}
+          contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 10, fontSize: 11, fontFamily: "Inter" }}
+        />
+        <Bar dataKey="done" name="Done" radius={[3,3,0,0]} maxBarSize={14}>
           {data.map((_, i) => <Cell key={i} fill="hsl(var(--foreground))" opacity={0.85} />)}
         </Bar>
-        <Bar dataKey="inProgress" name="in progress" radius={[4, 4, 0, 0]} maxBarSize={20}>
+        <Bar dataKey="active" name="Active" radius={[3,3,0,0]} maxBarSize={14}>
           {data.map((_, i) => <Cell key={i} fill="hsl(38 85% 55%)" opacity={0.7} />)}
         </Bar>
-        <Bar dataKey="pending" name="pending" radius={[4, 4, 0, 0]} maxBarSize={20}>
+        <Bar dataKey="pending" name="Pending" radius={[3,3,0,0]} maxBarSize={14}>
           {data.map((_, i) => <Cell key={i} fill="hsl(var(--muted-foreground))" opacity={0.25} />)}
         </Bar>
       </BarChart>
@@ -275,52 +159,34 @@ function RoadmapChart({ items }: { items: { week: number; status: string }[] }) 
 }
 
 /* ─────────────────────────────────────────────────────────────
-   NODE HEALTH GRID
+   INTEGRATION ROW
 ───────────────────────────────────────────────────────────── */
-function NodeHealthGrid({ nodes }: { nodes: { tool: string; state: string; uptime: number; label: string }[] }) {
-  const toolColors: Record<string, { color: string; logo: string }> = {
-    paystack: { color: "#00C3F7", logo: "P" },
-    flutterwave: { color: "#F5A623", logo: "F" },
-    whatsapp: { color: "#25D366", logo: "W" },
-    google_workspace: { color: "#4285F4", logo: "G" },
-    make: { color: "#6D00CC", logo: "M" },
-    mailchimp: { color: "#FFE01B", logo: "✉" },
-    notion: { color: "#888", logo: "N" },
-    instagram: { color: "#E1306C", logo: "IG" },
-    slack: { color: "#4A154B", logo: "#" },
-    stripe: { color: "#635BFF", logo: "S" },
-    shopify: { color: "#96BF48", logo: "🛍" },
-    quickbooks: { color: "#2CA01C", logo: "QB" },
-  };
-
+function IntegrationRow({ node }: { node: { tool: string; state: string; label: string; uptime?: number } }) {
+  const tool = TOOL_CONFIGS[node.tool];
+  if (!tool) return null;
+  const isBloom = node.state === "bloom";
+  const isSprout = node.state === "sprout";
   return (
-    <div className="grid grid-cols-2 gap-3">
-      {nodes.slice(0, 4).map((node) => {
-        const t = toolColors[node.tool] ?? { color: "#888", logo: "?" };
-        const isBloom = node.state === "bloom";
-        const isSprout = node.state === "sprout";
-        return (
-          <div key={node.tool} className="surface-flat p-4 flex items-center gap-3">
-            <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0"
-              style={{ background: `${t.color}15`, color: t.color }}
-            >
-              {t.logo}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold font-sans text-foreground truncate">{node.label}</p>
-              <div className="flex items-center gap-2 mt-1">
-                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                  isBloom ? "bg-omni-leaf animate-pulse" : isSprout ? "bg-omni-gold" : "bg-muted-foreground opacity-30"
-                }`} />
-                <span className="text-[11px] text-muted-foreground font-sans">
-                  {isBloom ? `${node.uptime}% uptime` : isSprout ? "Configuring" : "Not planted"}
-                </span>
-              </div>
-            </div>
-          </div>
-        );
-      })}
+    <div className="flex items-center gap-3 py-3" style={{ borderBottom: "1px solid rgba(26,26,26,0.06)" }}>
+      <div className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0"
+        style={{ background: `${tool.color}15`, color: tool.color }}>
+        {tool.logo}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold font-sans text-foreground truncate">{node.label}</p>
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {isBloom ? (
+          <span className="flex items-center gap-1 text-[11px] font-sans text-omni-leaf">
+            <span className="w-1.5 h-1.5 rounded-full bg-omni-leaf animate-pulse" />
+            {node.uptime}%
+          </span>
+        ) : isSprout ? (
+          <span className="text-[11px] font-sans text-omni-gold">Configuring</span>
+        ) : (
+          <span className="text-[11px] font-sans text-muted-foreground opacity-50">Seed</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -329,218 +195,233 @@ function NodeHealthGrid({ nodes }: { nodes: { tool: string; state: string; uptim
    HOME PAGE
 ───────────────────────────────────────────────────────────── */
 export default function HomePage() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { items } = useRoadmap();
   const { nodes } = useWorkflowNodes();
   const { onboarding } = useOnboarding();
   const [chatExchanges, setChatExchanges] = useState(0);
 
-  // Load chat exchange count for progress ring
   useEffect(() => {
     if (!user) return;
-    supabase
-      .from("chat_messages")
-      .select("id", { count: "exact" })
-      .eq("user_id", user.id)
-      .eq("role", "user")
+    supabase.from("chat_messages").select("id", { count: "exact" }).eq("user_id", user.id).eq("role", "user")
       .then(({ count }) => { if (count) setChatExchanges(count); });
   }, [user]);
 
   const done = items.filter((i) => i.status === "done").length;
   const inProgress = items.filter((i) => i.status === "in_progress").length;
   const blooming = nodes.filter((n) => n.state === "bloom").length;
+  const sprouting = nodes.filter((n) => n.state === "sprout").length;
+  const seeds = nodes.filter((n) => n.state === "seed").length;
   const progress = items.length > 0 ? Math.round((done / items.length) * 100) : 0;
+  const bloomScore = Math.min(blooming / 4, 1) * 100;
+  const chatScore = Math.min(chatExchanges / 8, 1) * 100;
+  const composite = Math.round(progress * 0.5 + bloomScore * 0.3 + chatScore * 0.2);
+
   const firstName = user?.username?.split(" ")[0] || "there";
-
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
-
-  const personaLabel = onboarding?.user_type
-    ? { finder: "Finder", grower: "Grower", scaler: "Scaler" }[onboarding.user_type] ?? onboarding.user_type
-    : null;
+  const persona = onboarding?.user_type ? PERSONA_META[onboarding.user_type] : null;
+  const pendingItems = items.filter((i) => i.status !== "done").slice(0, 3);
 
   return (
-    <div className="min-h-screen bg-background p-6 md:p-10">
-      {/* Header */}
-      <div className="mb-10 animate-fade-up">
-        <p className="text-xs text-muted-foreground font-sans uppercase tracking-widest mb-2">
-          {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
-        </p>
-        <h1 className="font-serif text-5xl md:text-6xl text-foreground leading-tight">
-          {greeting}, {firstName}.
-        </h1>
-        <div className="flex items-center gap-3 mt-3 flex-wrap">
-          <p className="text-muted-foreground font-sans text-lg">
-            Your business is{" "}
-            <span className="text-omni-leaf font-semibold">
-              {blooming > 0 ? `${blooming} integration${blooming > 1 ? "s" : ""} live` : "ready to grow"}
-            </span>.
+    <div className="min-h-screen bg-background">
+
+      {/* ── HERO STRIP ── */}
+      <div className="px-5 md:px-10 pt-8 pb-6 animate-fade-up"
+        style={{ borderBottom: "1px solid rgba(26,26,26,0.06)" }}>
+        <div className="max-w-4xl">
+          {/* Date */}
+          <p className="text-xs text-muted-foreground font-sans uppercase tracking-widest mb-3">
+            {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}
           </p>
-          {personaLabel && (
-            <span className="text-xs font-sans px-3 py-1.5 rounded-full bg-muted text-muted-foreground">
-              {personaLabel}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Stat cards + progress ring row */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-        {/* Stat cards (4 cols on md) */}
-        {[
-          { label: "Roadmap progress", value: `${progress}%`, sub: `${done} of ${items.length} complete`, color: "text-omni-leaf", bg: "bg-omni-leaf/8" },
-          { label: "Live integrations", value: String(blooming), sub: "Blooming in flowerbed", color: "text-omni-bloom", bg: "bg-omni-bloom/8" },
-          { label: "In progress", value: String(inProgress), sub: "Tasks active now", color: "text-omni-gold", bg: "bg-omni-gold/8" },
-          { label: "Seeds ready", value: String(nodes.filter((n) => n.state === "seed").length), sub: "Waiting to plant", color: "text-muted-foreground", bg: "bg-muted/40" },
-        ].map((stat, i) => (
-          <div key={stat.label} className="surface-card p-5 animate-fade-up" style={{ animationDelay: `${i * 0.07}s` }}>
-            <div className={`inline-flex items-center justify-center w-10 h-10 rounded-xl ${stat.bg} mb-4`}>
-              <TrendingUp size={16} strokeWidth={1.5} className={stat.color} />
-            </div>
-            <p className={`font-serif text-3xl ${stat.color} mb-1`}>{stat.value}</p>
-            <p className="text-xs font-semibold font-sans text-foreground mb-0.5">{stat.label}</p>
-            <p className="text-xs text-muted-foreground font-sans">{stat.sub}</p>
-          </div>
-        ))}
-
-        {/* Progress ring — 5th cell, spans full row on mobile */}
-        <div className="col-span-2 md:col-span-1">
-          <ProgressRing
-            roadmapPct={progress}
-            bloomedNodes={blooming}
-            chatExchanges={chatExchanges}
-          />
-        </div>
-      </div>
-
-      {/* AI Next Action */}
-      <div className="mb-8">
-        <NextActionCard user={user} items={items} nodes={nodes} onboarding={onboarding} />
-      </div>
-
-      {/* Analytics section */}
-      <div className="grid md:grid-cols-2 gap-6 mb-8">
-        {/* Roadmap chart */}
-        <div className="surface-card p-6 animate-fade-up stagger-2">
-          <div className="flex items-center justify-between mb-5">
+          {/* Greeting row */}
+          <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <p className="text-sm font-semibold font-sans text-foreground">Roadmap completions</p>
-              <p className="text-xs text-muted-foreground font-sans mt-0.5">Tasks per week by status</p>
-            </div>
-            <div className="flex items-center gap-3 text-[11px] font-sans text-muted-foreground">
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm bg-foreground opacity-85" />Done</span>
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm bg-omni-gold opacity-70" />Active</span>
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm bg-muted-foreground opacity-30" />Pending</span>
-            </div>
-          </div>
-          <RoadmapChart items={items} />
-          <div className="mt-4 pt-4" style={{ borderTop: "1px solid rgba(26,26,26,0.06)" }}>
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground font-sans">Overall completion rate</p>
-              <p className="font-serif text-xl text-foreground">{progress}%</p>
-            </div>
-            <div className="h-1.5 bg-muted rounded-full overflow-hidden mt-2">
-              <div className="h-full bg-foreground rounded-full transition-all duration-1000 ease-out" style={{ width: `${progress}%` }} />
-            </div>
-          </div>
-        </div>
-
-        {/* Node health grid */}
-        <div className="surface-card p-6 animate-fade-up stagger-3">
-          <div className="flex items-center justify-between mb-5">
-            <div>
-              <p className="text-sm font-semibold font-sans text-foreground">Integration health</p>
-              <p className="text-xs text-muted-foreground font-sans mt-0.5">Node uptime & status</p>
-            </div>
-            <Link to="/flowerbed" className="text-xs font-sans text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors">
-              View all <ArrowRight size={11} />
-            </Link>
-          </div>
-          <NodeHealthGrid nodes={nodes} />
-          <div className="mt-4 pt-4" style={{ borderTop: "1px solid rgba(26,26,26,0.06)" }}>
-            <div className="flex items-center gap-4 text-xs font-sans text-muted-foreground">
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-omni-leaf" />{blooming} live</span>
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-omni-gold" />{nodes.filter((n) => n.state === "sprout").length} configuring</span>
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-muted-foreground opacity-30" />{nodes.filter((n) => n.state === "seed").length} seeds</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Quick action cards */}
-      <div className="grid md:grid-cols-3 gap-5 mb-8">
-        {[
-          {
-            to: "/chat",
-            icon: <MessageCircle size={20} strokeWidth={1.5} />,
-            title: "Strategy Chat",
-            desc: "Continue your conversation with your AI business partner.",
-            cta: "Open chat",
-            accentBg: "bg-omni-bloom/10",
-            accent: "text-omni-bloom",
-          },
-          {
-            to: "/roadmaps",
-            icon: <Map size={20} strokeWidth={1.5} />,
-            title: "Roadmap",
-            desc: `${inProgress} tasks in progress across your 30-day plan.`,
-            cta: "View roadmap",
-            accentBg: "bg-omni-gold/10",
-            accent: "text-omni-gold",
-          },
-          {
-            to: "/flowerbed",
-            icon: <Flower2 size={20} strokeWidth={1.5} />,
-            title: "Workflow Flowerbed",
-            desc: `${blooming} blooming · ${nodes.filter((n) => n.state === "seed").length} seeds ready to plant.`,
-            cta: "Open flowerbed",
-            accentBg: "bg-omni-leaf/10",
-            accent: "text-omni-leaf",
-          },
-        ].map((item, i) => (
-          <Link
-            key={item.to} to={item.to}
-            className="surface-card p-7 hover:shadow-float transition-all duration-300 group block animate-fade-up"
-            style={{ animationDelay: `${0.3 + i * 0.1}s`, textDecoration: "none" }}
-          >
-            <div className={`w-11 h-11 rounded-xl ${item.accentBg} flex items-center justify-center mb-5`}>
-              <span className={item.accent}>{item.icon}</span>
-            </div>
-            <h3 className="font-serif text-xl text-foreground mb-2">{item.title}</h3>
-            <p className="text-sm text-muted-foreground font-sans mb-5 leading-relaxed">{item.desc}</p>
-            <div className="flex items-center gap-1.5 text-xs font-sans text-foreground font-semibold group-hover:gap-3 transition-all duration-200">
-              {item.cta} <ArrowRight size={12} />
-            </div>
-          </Link>
-        ))}
-      </div>
-
-      {/* Current priorities */}
-      <div className="animate-fade-up stagger-5">
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="font-serif text-2xl text-foreground">Current priorities</h2>
-          <Link to="/roadmaps" className="text-xs text-muted-foreground font-sans hover:text-foreground flex items-center gap-1.5 transition-colors">
-            View all <ArrowRight size={11} />
-          </Link>
-        </div>
-        <div className="space-y-3">
-          {items.filter((i) => i.status !== "done").slice(0, 4).map((item) => (
-            <div key={item.id} className="surface-flat px-6 py-4 flex items-center gap-4">
-              <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-                item.status === "in_progress" ? "bg-omni-gold animate-pulse" : "border border-muted-foreground opacity-30"
-              }`} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold font-sans text-foreground truncate">{item.title}</p>
-                <p className="text-xs text-muted-foreground font-sans">Week {item.week} · {item.category}</p>
+              <h1 className="font-serif text-4xl md:text-5xl text-foreground leading-tight">
+                {getGreeting()}, {firstName} 👋
+              </h1>
+              <div className="flex items-center gap-2.5 mt-3 flex-wrap">
+                {persona && (
+                  <span className={`inline-flex items-center gap-1.5 text-xs font-sans font-semibold px-3 py-1.5 rounded-full ${persona.color}`}>
+                    {persona.emoji} {persona.label}
+                  </span>
+                )}
+                {onboarding?.primary_goal && (
+                  <span className="text-sm text-muted-foreground font-sans truncate max-w-xs">
+                    — {onboarding.primary_goal}
+                  </span>
+                )}
               </div>
-              <span className={`text-xs font-sans px-3 py-1 rounded-full ${
-                item.status === "in_progress" ? "bg-omni-gold/10 text-omni-gold" : "text-muted-foreground bg-muted"
-              }`}>
-                {item.status === "in_progress" ? "In progress" : "Pending"}
-              </span>
             </div>
+            {/* Score ring */}
+            <div className="flex-shrink-0 flex flex-col items-center gap-1">
+              <ProgressRing score={composite} />
+              <p className="text-[10px] text-muted-foreground font-sans uppercase tracking-wide">Score</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="px-5 md:px-10 py-6 space-y-6 max-w-4xl">
+
+        {/* ── AI INSIGHT BANNER ── */}
+        <div className="surface-card p-5 animate-fade-up stagger-1">
+          <AiInsightCard user={user} items={items} nodes={nodes} onboarding={onboarding} />
+          <div className="mt-4 pt-4 flex gap-3" style={{ borderTop: "1px solid rgba(26,26,26,0.06)" }}>
+            <button onClick={() => navigate("/chat")} className="btn-pill text-xs px-5 py-2.5 flex items-center gap-1.5">
+              <MessageCircle size={12} /> Open Chat
+            </button>
+            <button onClick={() => navigate("/roadmaps")} className="btn-ghost-pill text-xs px-5 py-2.5 flex items-center gap-1.5">
+              <Map size={12} /> View Roadmap
+            </button>
+          </div>
+        </div>
+
+        {/* ── STAT ROW ── */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 animate-fade-up stagger-2">
+          {[
+            { label: "Roadmap", value: `${progress}%`, sub: `${done}/${items.length} done`, icon: Target, color: "text-omni-leaf", bg: "bg-omni-leaf/10", to: "/roadmaps" },
+            { label: "Live tools", value: String(blooming), sub: blooming > 0 ? "Blooming" : "None yet", icon: Zap, color: "text-omni-bloom", bg: "bg-omni-bloom/10", to: "/flowerbed" },
+            { label: "In progress", value: String(inProgress), sub: "Active tasks", icon: Activity, color: "text-omni-gold", bg: "bg-omni-gold/10", to: "/roadmaps" },
+            { label: "Seeds", value: String(seeds), sub: "Ready to plant", icon: Flower2, color: "text-muted-foreground", bg: "bg-muted", to: "/flowerbed" },
+          ].map((stat, i) => (
+            <Link key={stat.label} to={stat.to}
+              className="surface-card p-4 flex flex-col gap-3 hover:shadow-float transition-all duration-300 group"
+              style={{ textDecoration: "none", animationDelay: `${i * 0.07}s` }}>
+              <div className={`w-9 h-9 rounded-xl ${stat.bg} flex items-center justify-center`}>
+                <stat.icon size={15} strokeWidth={1.5} className={stat.color} />
+              </div>
+              <div>
+                <p className={`font-serif text-3xl ${stat.color}`}>{stat.value}</p>
+                <p className="text-xs font-semibold font-sans text-foreground mt-0.5">{stat.label}</p>
+                <p className="text-[11px] text-muted-foreground font-sans">{stat.sub}</p>
+              </div>
+              <ChevronRight size={12} className="text-muted-foreground group-hover:translate-x-1 transition-transform mt-auto self-end" />
+            </Link>
           ))}
         </div>
+
+        {/* ── TWO COL: Roadmap progress + Integrations ── */}
+        <div className="grid md:grid-cols-2 gap-5 animate-fade-up stagger-3">
+
+          {/* Roadmap progress card */}
+          <div className="surface-card p-5 flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-sm font-semibold font-sans text-foreground">30-Day Roadmap</p>
+                <p className="text-xs text-muted-foreground font-sans">Weekly completion</p>
+              </div>
+              <Link to="/roadmaps" className="flex items-center gap-1 text-xs font-sans text-muted-foreground hover:text-foreground transition-colors">
+                Full view <ArrowRight size={10} />
+              </Link>
+            </div>
+            <RoadmapChart items={items} />
+            {/* Progress bar */}
+            <div className="mt-4 pt-4" style={{ borderTop: "1px solid rgba(26,26,26,0.06)" }}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-sans text-muted-foreground">Overall</span>
+                <span className="font-serif text-lg text-foreground">{progress}%</span>
+              </div>
+              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                <div className="h-full bg-foreground rounded-full transition-all duration-1000" style={{ width: `${progress}%` }} />
+              </div>
+              <div className="flex gap-3 mt-3 text-[10px] font-sans text-muted-foreground">
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-foreground opacity-85" />Done</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: "hsl(38 85% 55%)" }} />Active</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-muted-foreground opacity-30" />Pending</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Integrations card */}
+          <div className="surface-card p-5 flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-sm font-semibold font-sans text-foreground">Integrations</p>
+                <p className="text-xs text-muted-foreground font-sans">{blooming} live · {sprouting} configuring</p>
+              </div>
+              <Link to="/flowerbed" className="flex items-center gap-1 text-xs font-sans text-muted-foreground hover:text-foreground transition-colors">
+                Flowerbed <ArrowRight size={10} />
+              </Link>
+            </div>
+            <div className="flex-1">
+              {nodes.slice(0, 4).map((n) => <IntegrationRow key={n.id} node={n} />)}
+              {nodes.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <Flower2 size={24} strokeWidth={1} className="text-muted-foreground mb-3 opacity-40" />
+                  <p className="text-sm text-muted-foreground font-sans">No tools planted yet</p>
+                </div>
+              )}
+            </div>
+            <Link to="/flowerbed"
+              className="mt-4 pt-4 flex items-center justify-between text-xs font-sans font-semibold text-foreground hover:opacity-70 transition-opacity"
+              style={{ borderTop: "1px solid rgba(26,26,26,0.06)" }}>
+              <span>Open Workflow Flowerbed</span>
+              <ArrowRight size={12} />
+            </Link>
+          </div>
+        </div>
+
+        {/* ── CURRENT PRIORITIES ── */}
+        <div className="animate-fade-up stagger-4">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="font-serif text-2xl text-foreground">Today's priorities</h2>
+              <p className="text-xs text-muted-foreground font-sans mt-0.5">{inProgress} active · {items.filter(i=>i.status==="pending").length} pending</p>
+            </div>
+            <Link to="/roadmaps" className="text-xs text-muted-foreground font-sans hover:text-foreground flex items-center gap-1 transition-colors">
+              All tasks <ArrowRight size={11} />
+            </Link>
+          </div>
+          <div className="space-y-2.5">
+            {pendingItems.length > 0 ? pendingItems.map((item, i) => (
+              <Link key={item.id} to="/roadmaps"
+                className="surface-flat px-5 py-4 flex items-center gap-4 hover:shadow-float transition-all duration-200 group block"
+                style={{ textDecoration: "none" }}>
+                <div className={`w-3 h-3 rounded-full flex-shrink-0 transition-transform group-hover:scale-125 ${
+                  item.status === "in_progress" ? "bg-omni-gold animate-pulse" : "border-2 border-muted-foreground opacity-30"
+                }`} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold font-sans text-foreground truncate">{item.title}</p>
+                  <p className="text-xs text-muted-foreground font-sans">Week {item.week} · {item.category}</p>
+                </div>
+                <span className={`text-xs font-sans px-2.5 py-1 rounded-full flex-shrink-0 ${
+                  item.status === "in_progress" ? "bg-omni-gold/10 text-omni-gold" : "bg-muted text-muted-foreground"
+                }`}>
+                  {item.status === "in_progress" ? "Active" : "Pending"}
+                </span>
+                <ChevronRight size={13} className="text-muted-foreground flex-shrink-0 group-hover:translate-x-1 transition-transform" />
+              </Link>
+            )) : (
+              <div className="surface-flat px-6 py-8 text-center">
+                <CheckCircle size={22} strokeWidth={1.5} className="text-omni-leaf mx-auto mb-3 opacity-60" />
+                <p className="text-sm font-semibold font-sans text-foreground">All caught up!</p>
+                <p className="text-xs text-muted-foreground font-sans mt-1">No pending tasks right now.</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── QUICK NAV ROW ── */}
+        <div className="grid grid-cols-3 gap-3 pb-6 animate-fade-up stagger-5">
+          {[
+            { to: "/chat", icon: MessageCircle, label: "Strategy Chat", desc: "Talk to your AI partner" },
+            { to: "/roadmaps", icon: Map, label: "Roadmaps", desc: "Your 30-day plan" },
+            { to: "/flowerbed", icon: Flower2, label: "Flowerbed", desc: "Connect your tools" },
+          ].map((item) => (
+            <Link key={item.to} to={item.to}
+              className="surface-card p-4 flex flex-col items-center text-center gap-2.5 hover:shadow-float transition-all duration-300 group"
+              style={{ textDecoration: "none" }}>
+              <div className="w-10 h-10 rounded-2xl bg-muted flex items-center justify-center group-hover:scale-110 transition-transform">
+                <item.icon size={18} strokeWidth={1.5} className="text-foreground" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold font-sans text-foreground">{item.label}</p>
+                <p className="text-[11px] text-muted-foreground font-sans mt-0.5 hidden sm:block">{item.desc}</p>
+              </div>
+            </Link>
+          ))}
+        </div>
+
       </div>
     </div>
   );
